@@ -1,0 +1,8 @@
+{
+  "name": "prd-review-assets",
+  "private": true,
+  "dependencies": {
+    "@larksuite/cli": "1.0.100",
+    "mermaid": "12.3.0"
+  }
+}

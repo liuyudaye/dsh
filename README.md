@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+This fork includes a [PRD review application with local and server setup instructions](apps/prd-review/README.md).
+
 DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
 It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).

@@ -192,6 +192,18 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.requests[0]).not.toHaveProperty('dsh_plugin_packages')
   })
 
+  it.each(['max_tokens', 'max_completion_tokens'] as const)('omits an implicit %s while preserving explicit limits', async (maxTokensField) => {
+    const server = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const ctx = await harness(server.url, { omitDefaultMaxTokens: true, compat: { maxTokensField } })
+
+    await assemble(ctx, { model: 'deepseek-v4-pro', messages: [] })
+    await assemble(ctx, { model: 'deepseek-v4-pro', messages: [], maxTokens: 77 })
+
+    expect(server.requests).toHaveLength(2)
+    expect(server.requests[0]).not.toHaveProperty(maxTokensField)
+    expect(server.requests[1]).toMatchObject({ [maxTokensField]: 77 })
+  })
+
   it('routes OpenCode Go requests by Session id through its required session header', async () => {
     const server = await mockServer([{ events: textEvents }, { events: textEvents }])
     const ctx = new Context()

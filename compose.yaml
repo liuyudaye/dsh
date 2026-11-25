@@ -1,0 +1,57 @@
+name: feishu-prd-review
+
+x-prd-service: &prd-service
+  image: feishu-prd-review:local
+  build:
+    context: .
+    dockerfile: apps/prd-review/Dockerfile
+    args:
+      DSH_CLIENT_COMMIT_HASH: ${DSH_CLIENT_COMMIT_HASH:-0000000}
+  init: true
+  env_file: apps/prd-review/.env
+  restart: unless-stopped
+
+x-prd-environment: &prd-environment
+  PRD_PROJECT_ROOT: /app/apps/prd-review
+  DATA_DIR: /app/data
+
+services:
+  reports:
+    <<: *prd-service
+    environment: *prd-environment
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - prd-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/healthz', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  agent:
+    <<: *prd-service
+    command: ["sh", "/app/apps/prd-review/deploy/start-agent.sh"]
+    environment:
+      <<: *prd-environment
+      DSH_HOME: /app/agent-data/dsh
+      DSH_PRD_WORKSPACE: /app/agent-data/workspace
+    ports:
+      - "127.0.0.1:3080:3080"
+    volumes:
+      - prd-data:/app/data
+      - dsh-data:/app/agent-data
+    depends_on:
+      reports:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import http.client, socket; connection = http.client.HTTPConnection(socket.gethostbyname(socket.gethostname()), 3080, timeout=3); connection.request('GET', '/'); assert connection.getresponse().status in (200, 401)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  prd-data:
+  dsh-data:

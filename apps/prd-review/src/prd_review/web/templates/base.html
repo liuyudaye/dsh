@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PRD 评审工作台{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='3') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="top">
+    <div><a class="brand" href="{{ url_for('index') }}"><span class="brand-mark" aria-hidden="true">P</span> PRD 评审工作台</a></div>
+  </header>
+  {% block content %}{% endblock %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

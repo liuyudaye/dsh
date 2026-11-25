@@ -1,0 +1,253 @@
+{% extends 'base.html' %}
+{% block head %}
+  {% if has_diagrams %}
+    <script defer src="{{ url_for('mermaid_asset') }}"></script>
+    <script defer src="{{ url_for('static', filename='diagram.js') }}"></script>
+  {% endif %}
+{% endblock %}
+{% macro skill_field(id, current=none) %}
+  <details class="skill-field">
+    <summary>{{ 'Skill · ' ~ current.name if current else '添加自定义 Skill' }}</summary>
+    <p>上传 SKILL.md，把自己的评审规则和用例偏好应用到本次评审。</p>
+    <label class="visually-hidden" for="{{ id }}">上传 Skill 文件</label>
+    <input type="file" id="{{ id }}" name="skill" accept=".md,.markdown,.txt">
+    {% if current %}
+      <label class="remove-skill"><input type="checkbox" name="clear_skill" value="1"> 本次不沿用当前 Skill</label>
+    {% endif %}
+  </details>
+{% endmacro %}
+{% macro citations(items, include_full=false) %}
+  {% if items %}
+    <ul class="sources">
+      {% for cite in items %}
+        <li>
+          <a class="source-link" href="{{ url_for('compare_versions', version_id=selected.id, mode='source', view='original', full='1' if include_full else none) }}#line-left-{{ cite.line }}">原文第 {{ cite.line }}{% if cite.end_line != cite.line %}–{{ cite.end_line }}{% endif %} 行</a>
+          <q>{{ cite.quote }}</q>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endmacro %}
+{% macro questions(items) %}
+  <div class="issues">
+    {% for item in items %}
+      <article class="issue">
+        <div class="issue-meta">
+          <span class="status">{{ item.id }}</span>
+          {% if item.category %}<span class="badge finding-{{ item.category }}">{{ issue_types[item.category] }}</span>{% endif %}
+          {% if item.status != 'open' %}<span class="status">{{ statuses[item.status] }}</span>{% endif %}
+        </div>
+        <p>{{ item.question }}</p>
+        {% if item.impact %}<div class="impact">{{ item.impact }}</div>{% endif %}
+        <small>{{ item.source }}</small>
+        {% if item.evidence %}
+          {{ citations(item.evidence) }}
+        {% elif report.audit_version %}
+          <span class="unlocated">原文定位待核验</span>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+{% endmacro %}
+{% macro paste_form(id, selected=none) %}
+  <form action="{{ url_for('review') }}" method="post" enctype="multipart/form-data" class="input-form" data-review>
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <input type="hidden" name="mode" value="paste">
+    {% if selected %}
+      <input type="hidden" name="version_id" value="{{ selected.id }}">
+    {% endif %}
+    <label class="visually-hidden" for="{{ id }}">PRD 正文</label>
+    <textarea id="{{ id }}" name="source" rows="7" placeholder="将产品文档正文或 Markdown 粘贴到这里…" required></textarea>
+    {% if not selected %}
+      <details class="source-option">
+        <summary>附原文链接</summary>
+        <label class="visually-hidden" for="source-url">原文链接</label>
+        <input type="url" id="source-url" name="source_url" placeholder="https://…">
+      </details>
+    {% endif %}
+    {{ skill_field(id ~ '-skill', selected.snapshot.skill if selected else none) }}
+    <button type="submit">{{ '评审并保存新版本' if selected else '开始评审' }}</button>
+  </form>
+{% endmacro %}
+{% macro feishu_form(id, selected=none) %}
+  <form action="{{ url_for('review') }}" method="post" enctype="multipart/form-data" class="input-form" data-review>
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label class="visually-hidden" for="{{ id }}">飞书文档链接</label>
+    <input id="{{ id }}" type="url" name="url" value="{{ selected.snapshot.source_url if selected else '' }}"
+           placeholder="https://你的企业.feishu.cn/wiki/…" required>
+    {{ skill_field(id ~ '-skill', selected.snapshot.skill if selected else none) }}
+    <button class="secondary" type="submit">{{ '读取飞书最新版' if selected else '读取飞书并评审' }}</button>
+  </form>
+{% endmacro %}
+{% block content %}
+<main>
+  {% for message in get_flashed_messages() %}<p class="notice" role="status">{{ message }}</p>{% endfor %}
+  {% if not selected %}
+    <div class="page-enter">
+      <header class="workspace-intro">
+        <h1>产品文档评审</h1>
+        <p>按原文模块整理 PRD，找出影响开发和验收的疑点，再生成可执行的测试用例。</p>
+      </header>
+      <div class="intake">
+        <section class="panel intake-card" aria-labelledby="paste-heading">
+          <h2 id="paste-heading">粘贴正文</h2>
+          {{ paste_form('source') }}
+        </section>
+        <section class="panel intake-card feishu-card" aria-labelledby="feishu-heading">
+          <h2 id="feishu-heading">从飞书读取</h2>
+          <p>使用飞书文档或知识库链接。应用需要已获阅读权限。</p>
+          {{ feishu_form('wiki-url') }}
+        </section>
+      </div>
+      {% if documents %}
+        <section class="recent" aria-labelledby="recent-heading">
+          <h2 id="recent-heading">最近评审</h2>
+          <div class="recent-list">
+            {% for doc in documents %}
+              <a href="{{ url_for('version', version_id=doc.id) }}"><strong>{{ doc.title }}</strong><span>版本 {{ doc.revision }}</span></a>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    </div>
+  {% else %}
+    {% set pasted = selected.snapshot.origin == 'paste' %}
+    <div class="layout page-enter">
+      <aside class="reader-sidebar">
+        <a class="back-link" href="{{ url_for('index') }}">所有文档</a>
+        {% if modules %}
+          <h2>模块目录</h2>
+          <nav class="module-nav" aria-label="模块目录">
+            {% for module in modules %}
+              <a class="history" href="#module-{{ module.number }}">{{ module.title }}</a>
+            {% endfor %}
+            {% if shared_issues %}<a class="history" href="#shared-issues">跨模块与未定位问题</a>{% endif %}
+          </nav>
+        {% endif %}
+        {% if report.audit_version %}<a class="history case-nav" href="#test-cases">测试用例</a>{% endif %}
+        <h2>历史版本</h2>
+        <nav aria-label="历史版本">
+          {% for item in history %}
+            <a class="history" href="{{ url_for('version', version_id=item.id) }}"
+               {% if item.id == selected.id %}aria-current="page"{% endif %}>版本 {{ item.revision }}</a>
+          {% endfor %}
+        </nav>
+      </aside>
+      <article class="panel report">
+        <header class="report-header">
+          <div>
+            <div class="report-meta">
+              <span>{{ '粘贴版' if pasted else '飞书原文版本' }} {{ selected.revision }}</span>
+              {% if selected.snapshot.source_url %}<a href="{{ selected.snapshot.source_url }}" target="_blank" rel="noreferrer">飞书原文</a>{% endif %}
+              {% if selected.snapshot.skill %}<span>Skill · {{ selected.snapshot.skill.name }}</span>{% endif %}
+            </div>
+            <h1>{{ report.title }} · 大白话版</h1>
+          </div>
+          <div class="actions">
+            {% if has_canvas %}<a class="button" href="{{ url_for('canvas', version_id=selected.id) }}">打开画布</a>{% endif %}
+            <a class="button" href="{{ url_for('compare_versions', version_id=selected.id) }}">对比版本</a>
+            <a class="secondary" href="{{ url_for('download', version_id=selected.id) }}">下载 Markdown</a>
+            {% if report.test_cases %}
+              <a class="secondary" href="{{ url_for('download_xmind', version_id=selected.id) }}">下载测试用例（XMind）</a>
+            {% endif %}
+          </div>
+        </header>
+        <p class="intro">{{ report.intro }}</p>
+        <div class="review-actions">
+          <details class="inline-tool">
+            <summary>{{ '粘贴新版正文' if pasted else '读取飞书最新版' }}</summary>
+            {% if pasted %}{{ paste_form('new-source', selected) }}{% else %}{{ feishu_form('new-wiki', selected) }}{% endif %}
+          </details>
+          <details class="inline-tool">
+            <summary>重新评审这一版</summary>
+            <form method="post" action="{{ url_for('reformat', version_id=selected.id) }}" enctype="multipart/form-data" class="input-form" data-review>
+              <input type="hidden" name="csrf" value="{{ session.csrf }}">
+              {{ skill_field('reformat-skill', selected.snapshot.skill) }}
+              <button type="submit">开始重新评审</button>
+            </form>
+          </details>
+          {% if report.audit_version %}
+            <a class="back-link" href="#test-cases">测试用例 {{ report.test_cases|length }}</a>
+          {% endif %}
+        </div>
+        {% if modules %}
+          <div class="module-stack">
+            {% for module in modules %}
+              <details class="module" id="module-{{ module.number }}" {% if loop.first %}open{% endif %}>
+                <summary>
+                  <span>{{ module.title }}</span>
+                  {% if module.issues %}<small>{{ module.issues|length }} 项发现</small>{% endif %}
+                </summary>
+                <div class="module-body">
+                  <p>{{ module.intro }}</p>
+                  {% if module.steps %}
+                    <h4>处理规则</h4>
+                    <ul class="steps">{% for step in module.steps %}<li>{{ step }}</li>{% endfor %}</ul>
+                  {% endif %}
+                  {% if module.diagram %}
+                    <h4>流程图</h4>
+                    <div class="diagram"><pre class="mermaid">{{ module.diagram }}</pre></div>
+                  {% endif %}
+                  {% if module.issues %}
+                    <h4>评审发现</h4>
+                    {{ questions(module.issues) }}
+                  {% endif %}
+                </div>
+              </details>
+            {% endfor %}
+          </div>
+          {% if shared_issues %}
+            <section class="shared-issues" id="shared-issues">
+              <h3>跨模块与未定位问题</h3>
+              {{ questions(shared_issues) }}
+            </section>
+          {% endif %}
+        {% else %}
+          <h3>处理规则</h3>
+          <ul class="steps">{% for step in report.steps %}<li>{{ step }}</li>{% endfor %}</ul>
+          {% if flow %}
+            <h3>流程图</h3>
+            <div class="diagram"><pre class="mermaid">{{ flow }}</pre></div>
+          {% endif %}
+          <h3>评审发现</h3>
+          {% if shared_issues %}{{ questions(shared_issues) }}{% else %}<p>本次评审未列出待确认项。</p>{% endif %}
+        {% endif %}
+        {% if report.audit_version %}
+          <section id="test-cases" class="test-cases">
+            <h2>测试用例 <small>{{ report.test_cases|length }} 条</small></h2>
+            {% for case in report.test_cases %}
+              <details class="case">
+                <summary><span class="status">{{ case.id }} · {{ case.priority }}</span><strong>{{ case.title }}</strong></summary>
+                <div class="case-body">
+                  {% if case.module %}<span class="status">{{ modules[case.module - 1].title }}</span>{% endif %}
+                  <h4>前置条件</h4><p>{{ case.preconditions }}</p>
+                  <h4>执行步骤</h4><ol class="steps">{% for step in case.steps %}<li>{{ step }}</li>{% endfor %}</ol>
+                  <h4>预期结果</h4><p>{{ case.expected }}</p>
+                  {{ citations(case.evidence, true) }}
+                </div>
+              </details>
+            {% else %}
+              <p class="status">本版正文未生成可执行用例。</p>
+            {% endfor %}
+          </section>
+        {% endif %}
+      </article>
+    </div>
+  {% endif %}
+  <dialog id="review-progress" class="progress-dialog" aria-labelledby="job-title">
+    <header><h2 id="job-title">正在评审</h2><p>保存后会自动打开报告。</p></header>
+    <ol class="job-steps">
+      <li data-step="read"><span>读取原文</span><small></small></li>
+      <li data-step="structure"><span>整理业务模块</span><small></small></li>
+      <li data-step="audit"><span>审查规则并生成测试用例</span><small></small></li>
+      <li data-step="evidence"><span>核对原文依据</span><small></small></li>
+      <li data-step="save"><span>保存评审结果</span><small></small></li>
+    </ol>
+    <p id="job-status" role="status"></p>
+    <button id="job-close" class="secondary" type="button" hidden>返回编辑</button>
+  </dialog>
+</main>
+{% endblock %}
+{% block scripts %}
+  <script defer src="{{ url_for('static', filename='review.js', v='3') }}"></script>
+{% endblock %}

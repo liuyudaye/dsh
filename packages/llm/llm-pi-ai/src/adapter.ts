@@ -476,6 +476,15 @@ export class PiAiAdapter extends LlmAdapter {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
+        ...profile.omitDefaultMaxTokens && model.api === 'openai-completions' && options.maxTokens === undefined ? {
+          onPayload: (payload: unknown) => {
+            if (typeof payload !== 'object' || payload === null) return payload
+            const body = { ...payload }
+            Reflect.deleteProperty(body, 'max_tokens')
+            Reflect.deleteProperty(body, 'max_completion_tokens')
+            return body
+          },
+        } : {},
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),

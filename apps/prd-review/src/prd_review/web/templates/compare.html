@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}版本对比 · PRD 评审工作台{% endblock %}
+{% macro version_select(name, label, current) %}
+  <label class="version-field">
+    <span>{{ label }}</span>
+    <span class="select-wrap">
+      <select name="{{ name }}">
+        {% for entry in history %}
+          <option value="{{ entry.id }}"{% if entry.id == current.id %} selected{% endif %}>版本 {{ entry.revision }}</option>
+        {% endfor %}
+      </select>
+    </span>
+  </label>
+{% endmacro %}
+{% macro line_cell(line, change, side, marks) %}
+  {% set findings = marks.get(line.number, []) if line else [] %}
+  <td class="{{ change if line else 'blank' }}{% if findings %} evidence-cell{% endif %}"
+      {% if line %}id="line-{{ side }}-{{ line.number }}"{% endif %}>
+    {% if line %}
+      <div class="code-line{% if line.text.startswith('#') %} code-heading{% endif %}">
+        <span class="line-number" aria-label="第 {{ line.number }} 行">{{ line.number }}</span>
+        <span class="line-mark" aria-hidden="true">{{ '−' if change == 'removed' else '+' if change == 'added' else '' }}</span>
+        <span class="line-text">{{ line.text }}</span>
+        {% if findings %}<span class="evidence-line-label">{{ findings|join(' · ') }}</span>{% endif %}
+      </div>
+    {% endif %}
+  </td>
+{% endmacro %}
+{% macro issue_cell(item, highlight, is_new=false, side='left') %}
+  <td class="issue-side{% if highlight %} issue-side-updated{% endif %}">
+    {% if item %}
+      <div class="issue-meta">
+        <span class="badge badge-{{ item.status }}">{{ statuses[item.status] }}</span>
+        {% if item.category and item.category in issue_types %}<span class="badge finding-{{ item.category }}">{{ issue_types[item.category] }}</span>{% endif %}
+        {% if is_new %}<span class="status">新增</span>{% endif %}
+        {% if item.module %}<span class="status">{{ item.module }}</span>{% endif %}
+      </div>
+      <p>{{ item.question }}</p>
+      {% if item.impact %}<p class="impact">{{ item.impact }}</p>{% endif %}
+      <small>{{ item.source }}</small>
+      {% if item.evidence %}
+        <ul class="sources">
+          {% for cite in item.evidence %}
+            <li>
+              <a class="source-link" href="{{ url_for('compare_versions', version_id=selected.id, mode='history', left=left.id, right=right.id, view='original') }}#line-{{ side }}-{{ cite.line }}">原文第 {{ cite.line }} 行</a>
+              <q>{{ cite.quote }}</q>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% else %}
+      <span class="status">该版本未记录</span>
+    {% endif %}
+  </td>
+{% endmacro %}
+{% block content %}
+  <main class="compare-page page-enter">
+    <header class="compare-heading">
+      <div>
+        <a class="back-link" href="{{ url_for('version', version_id=right.id) }}">返回版本 {{ right.revision }}</a>
+        <h1>版本对比</h1>
+        <p class="document-name">{{ selected.title }}</p>
+      </div>
+      {% if history|length > 1 %}
+        <nav class="mode-option" aria-label="对比方式">
+          <a href="{{ url_for('compare_versions', version_id=selected.id, mode='history', right=right.id) }}"
+             {% if mode == 'history' %}aria-current="page"{% endif %}>历史版本</a>
+          <a href="{{ url_for('compare_versions', version_id=selected.id, mode='source', right=right.id) }}"
+             {% if mode == 'source' %}aria-current="page"{% endif %}>同版原文与副本</a>
+        </nav>
+      {% endif %}
+    </header>
+
+    {% if history|length > 1 %}
+      <form class="version-picker" method="get" action="{{ url_for('compare_versions', version_id=selected.id) }}">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <input type="hidden" name="view" value="{{ view }}">
+        {% if show_full %}<input type="hidden" name="full" value="1">{% endif %}
+        {% if mode == 'history' %}
+          {{ version_select('left', '左侧版本', left) }}
+          {{ version_select('right', '右侧版本', right) }}
+        {% else %}
+          {{ version_select('right', '原文版本', right) }}
+        {% endif %}
+        <button type="submit">查看对比</button>
+      </form>
+    {% endif %}
+
+    <div class="compare-toolbar">
+      {% if mode == 'history' %}
+        <nav class="view-tabs" aria-label="对比内容">
+          {% for key, label in [('copy', '大白话副本'), ('original', '产品原文'), ('issues', '问题状态')] %}
+            <a href="{{ url_for('compare_versions', version_id=selected.id, mode=mode, left=left.id, right=right.id,
+                                 view=key, full='1' if show_full else none) }}"
+               {% if view == key %}aria-current="page"{% endif %}>{{ label }}</a>
+          {% endfor %}
+        </nav>
+      {% endif %}
+      <a class="context-link" href="{{ url_for('compare_versions', version_id=selected.id, mode=mode, left=left.id,
+                                              right=right.id, view=view, full=none if show_full else '1') }}">
+        {{ '只看改动' if show_full else '显示全部问题' if mode == 'history' and view == 'issues' else '显示全文' }}
+      </a>
+    </div>
+
+    {% if left_marks or right_marks %}
+      <div class="evidence-legend"><span></span> 黄色标记为评审问题对应的原文行</div>
+    {% endif %}
+    <div class="diff-scroll" role="region" aria-label="左右对比结果" tabindex="0">
+      <table class="side-diff">
+        <colgroup><col><col></colgroup>
+        <thead>
+          <tr>
+            {% if mode == 'source' %}
+              <th scope="col">产品原文 <span>版本 {{ right.revision }}</span></th>
+              <th scope="col">大白话副本 <span>版本 {{ right.revision }}</span></th>
+            {% else %}
+              <th scope="col">旧版 <span>版本 {{ left.revision }}</span></th>
+              <th scope="col">新版 <span>版本 {{ right.revision }}</span></th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% if mode == 'history' and view == 'issues' %}
+            {% for id, old, new in issues %}
+              <tr class="issue-id"><th colspan="2" scope="rowgroup">{{ id }}</th></tr>
+              <tr>{{ issue_cell(old, false, false, 'left') }}{{ issue_cell(new, old != new, not old, 'right') }}</tr>
+            {% else %}
+              <tr><td colspan="2" class="diff-empty">问题状态和依据一致。</td></tr>
+            {% endfor %}
+          {% else %}
+            {% for row in rows %}
+              {% if row.kind == 'gap' %}
+                <tr><td colspan="2" class="diff-gap">省略 {{ row.omitted }} 行相同内容</td></tr>
+              {% else %}
+                <tr>{{ line_cell(row.left, 'equal' if row.kind == 'equal' else 'removed', 'left', left_marks) }}
+                    {{ line_cell(row.right, 'equal' if row.kind == 'equal' else 'added', 'right', right_marks) }}</tr>
+              {% endif %}
+            {% else %}
+              <tr><td colspan="2" class="diff-empty">两边文本一致。</td></tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </main>
+{% endblock %}

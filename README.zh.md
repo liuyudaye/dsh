@@ -1,5 +1,7 @@
 # DeepSeek Harness
 
+这个分支包含 [PRD 评审、源码开发和部署入口](apps/prd-review/README.md)。
+
 [English](README.md) | 中文
 
 DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。

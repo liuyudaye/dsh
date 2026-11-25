@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ selected.title }} · PRD 画布</title>
+  {% for stylesheet in assets.styles %}<link rel="stylesheet" href="{{ stylesheet }}">{% endfor %}
+</head>
+<body>
+  <div id="prd-canvas-root"
+       data-report-id="{{ selected.id }}"
+       data-csrf="{{ session.csrf }}"
+       data-report-url="{{ url_for('version', version_id=selected.id, view='report') }}"
+       data-compare-url="{{ url_for('compare_versions', version_id=selected.id) }}"
+       data-source-compare-url="{{ url_for('compare_versions', version_id=selected.id, mode='source', view='original', full=1) }}"
+       data-markdown-url="{{ url_for('download', version_id=selected.id) }}"
+       data-xmind-url="{{ url_for('download_xmind', version_id=selected.id) if has_cases else '' }}"
+       data-home-url="{{ url_for('index') }}"></div>
+  <noscript><a href="{{ url_for('version', version_id=selected.id, view='report') }}">查看文字报告</a></noscript>
+  <script type="module" src="{{ assets.script }}"></script>
+</body>
+</html>
